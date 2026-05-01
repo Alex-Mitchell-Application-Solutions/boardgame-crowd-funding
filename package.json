@@ -13,8 +13,8 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
-    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,yml,yaml,css}\" --ignore-path .gitignore",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,yml,yaml,css}\" --ignore-path .gitignore",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,mdx,yml,yaml,css}\" --ignore-path .gitignore --ignore-path .prettierignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,mdx,yml,yaml,css}\" --ignore-path .gitignore --ignore-path .prettierignore",
     "ci:quality": "pnpm run build && pnpm run test && pnpm run lint && pnpm run typecheck && pnpm run format:check",
     "env:check": "tsx scripts/check-env.ts"
   },
