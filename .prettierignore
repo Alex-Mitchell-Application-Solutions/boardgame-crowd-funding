@@ -1,0 +1,16 @@
+node_modules
+.next
+.turbo
+dist
+build
+out
+coverage
+pnpm-lock.yaml
+.next
+next-env.d.ts
+*.min.js
+*.min.css
+.pnpm-store
+supabase/.branches
+supabase/.temp
+drizzle/.snapshot.json
