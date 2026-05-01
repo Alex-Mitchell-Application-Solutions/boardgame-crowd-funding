@@ -1,13 +1,34 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  boolean,
+  check,
+  date,
+  index,
+  integer,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { authUsers } from 'drizzle-orm/supabase';
-import { creatorProfilesPolicies, processedStripeEventsPolicies } from './policies';
+import {
+  campaignMediaPolicies,
+  campaignsPolicies,
+  creatorProfilesPolicies,
+  processedStripeEventsPolicies,
+  rewardTiersPolicies,
+} from './policies';
 
 // ============================================================================
 // SCHEMA — single source of truth for all app tables.
 // ----------------------------------------------------------------------------
-// Money columns are bigint pence (BIGINT not INTEGER — pledge totals can blow
-// past 2.1B pence on a viral campaign). Timestamps are timestamp-with-tz.
+// Money columns are `bigint` pence with mode: 'number' — pence values up to
+// 2^53-1 (~£90 trillion) are within safe-integer range and we get ergonomic
+// JS numbers instead of BigInts. Timestamps are timestamp-with-tz.
 // Supabase's `auth.users` is referenced via drizzle-orm/supabase's authUsers
 // declaration so we don't redeclare its column shape ourselves.
 // ============================================================================
@@ -15,6 +36,32 @@ import { creatorProfilesPolicies, processedStripeEventsPolicies } from './polici
 // Re-export `authUsers` so callers can `import { authUsers } from '@bgcf/db'`
 // the same way they import our own tables.
 export { authUsers };
+
+// ---- enums ---------------------------------------------------------------
+
+export const campaignStatus = pgEnum('campaign_status', [
+  'draft',
+  'live',
+  'succeeded',
+  'failed',
+  'cancelled',
+  'hidden',
+]);
+export type CampaignStatus = (typeof campaignStatus.enumValues)[number];
+
+export const campaignCategory = pgEnum('campaign_category', [
+  'strategy',
+  'family',
+  'party',
+  'rpg',
+  'wargame',
+  'card',
+  'other',
+]);
+export type CampaignCategory = (typeof campaignCategory.enumValues)[number];
+
+export const mediaKind = pgEnum('media_kind', ['cover', 'gallery_image', 'gallery_video']);
+export type MediaKind = (typeof mediaKind.enumValues)[number];
 
 // ---- creator_profiles ----------------------------------------------------
 // Extends auth.users with platform-creator info. One row per user who has
@@ -52,6 +99,136 @@ export const creatorProfiles = pgTable(
 
 export type CreatorProfile = typeof creatorProfiles.$inferSelect;
 export type NewCreatorProfile = typeof creatorProfiles.$inferInsert;
+
+// ---- campaigns -----------------------------------------------------------
+// One row per crowdfunding campaign. Most fields are creator-editable while
+// the campaign is in `draft`; `launched_at`, `deadline_at`, and `status`
+// transitions are controlled by app logic (publish action, finalize cron).
+//
+// Denormalised `total_pledged_pence` + `pledge_count` are reconciled by the
+// `setup_intent.succeeded` webhook handler so the public campaign page
+// doesn't have to aggregate pledges on every render.
+export const campaigns = pgTable(
+  'campaigns',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    creatorId: uuid('creator_id')
+      .notNull()
+      .references(() => creatorProfiles.userId, { onDelete: 'restrict' }),
+    slug: text('slug').notNull().unique(),
+    title: text('title').notNull(),
+    tagline: text('tagline'),
+    storyMd: text('story_md').notNull(),
+    category: campaignCategory('category').notNull(),
+    goalPence: bigint('goal_pence', { mode: 'number' }).notNull(),
+    currency: text('currency').notNull().default('gbp'),
+    status: campaignStatus('status').notNull().default('draft'),
+    launchedAt: timestamp('launched_at', { withTimezone: true }),
+    deadlineAt: timestamp('deadline_at', { withTimezone: true }),
+    finalizedAt: timestamp('finalized_at', { withTimezone: true }),
+    feeOverridePct: numeric('fee_override_pct', { precision: 5, scale: 4 }),
+    totalPledgedPence: bigint('total_pledged_pence', { mode: 'number' }).notNull().default(0),
+    pledgeCount: integer('pledge_count').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    // Finalize-cron scan: WHERE status = 'live' AND deadline_at <= now().
+    index('campaigns_status_deadline_idx').on(t.status, t.deadlineAt),
+    // Browse: WHERE category = ? AND status = 'live'.
+    index('campaigns_category_status_idx').on(t.category, t.status),
+    index('campaigns_creator_id_idx').on(t.creatorId),
+    // GIN trigram for ILIKE search on title (extension enabled in migration).
+    index('campaigns_title_trgm_idx').using('gin', sql`${t.title} gin_trgm_ops`),
+    check('campaigns_goal_pence_min', sql`${t.goalPence} >= 100`),
+    check('campaigns_currency_lower', sql`${t.currency} = lower(${t.currency})`),
+    ...campaignsPolicies(t),
+  ],
+);
+
+export type Campaign = typeof campaigns.$inferSelect;
+export type NewCampaign = typeof campaigns.$inferInsert;
+
+// ---- campaign_media ------------------------------------------------------
+// Cover image + gallery for a campaign. The cover is identified by
+// `kind = 'cover'`; a partial unique index enforces "at most one cover per
+// campaign", which avoids the chicken-and-egg of a `campaigns.cover_media_id`
+// FK back to a child table.
+export const campaignMedia = pgTable(
+  'campaign_media',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    campaignId: uuid('campaign_id')
+      .notNull()
+      .references(() => campaigns.id, { onDelete: 'cascade' }),
+    r2Key: text('r2_key').notNull().unique(),
+    kind: mediaKind('kind').notNull(),
+    mimeType: text('mime_type').notNull(),
+    bytes: bigint('bytes', { mode: 'number' }),
+    width: integer('width'),
+    height: integer('height'),
+    position: integer('position').notNull().default(0),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    index('campaign_media_campaign_id_position_idx').on(t.campaignId, t.position),
+    uniqueIndex('campaign_media_one_cover_per_campaign_idx')
+      .on(t.campaignId)
+      .where(sql`${t.kind} = 'cover'`),
+    ...campaignMediaPolicies(t),
+  ],
+);
+
+export type CampaignMedia = typeof campaignMedia.$inferSelect;
+export type NewCampaignMedia = typeof campaignMedia.$inferInsert;
+
+// ---- reward_tiers --------------------------------------------------------
+// A creator-defined pledge level on a campaign. `quantity_limit` null means
+// unlimited; `quantity_claimed` is incremented when a pledge with this tier
+// commits (transactionally, in the `setup_intent.succeeded` handler). The
+// CHECK constraint guards against ever overselling, even in the face of a
+// race that bypassed the application-level lock.
+export const rewardTiers = pgTable(
+  'reward_tiers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    campaignId: uuid('campaign_id')
+      .notNull()
+      .references(() => campaigns.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    descriptionMd: text('description_md').notNull(),
+    pricePence: bigint('price_pence', { mode: 'number' }).notNull(),
+    quantityLimit: integer('quantity_limit'),
+    quantityClaimed: integer('quantity_claimed').notNull().default(0),
+    estimatedDelivery: date('estimated_delivery'),
+    position: integer('position').notNull().default(0),
+    isHidden: boolean('is_hidden').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    index('reward_tiers_campaign_id_position_idx').on(t.campaignId, t.position),
+    check('reward_tiers_price_pence_min', sql`${t.pricePence} >= 100`),
+    check(
+      'reward_tiers_quantity_claimed_within_limit',
+      sql`${t.quantityLimit} IS NULL OR ${t.quantityClaimed} <= ${t.quantityLimit}`,
+    ),
+    ...rewardTiersPolicies(t),
+  ],
+);
+
+export type RewardTier = typeof rewardTiers.$inferSelect;
+export type NewRewardTier = typeof rewardTiers.$inferInsert;
 
 // ---- processed_stripe_events ---------------------------------------------
 // Idempotency table for Stripe webhook events. Every webhook handler inserts
