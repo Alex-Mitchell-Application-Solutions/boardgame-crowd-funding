@@ -36,6 +36,9 @@ Thumbs.db
 *.swp
 *.swo
 
+# Local Claude Code settings (per-user, not part of the repo)
+.claude/
+
 # Supabase local
 supabase/.branches/
 supabase/.temp/
