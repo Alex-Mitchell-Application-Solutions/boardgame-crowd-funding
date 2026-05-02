@@ -24,11 +24,4 @@ export default defineConfig({
   verbose: true,
   strict: true,
   schemaFilter: ['public'],
-  // RLS policies declared via pgPolicy() in schema.ts get included in
-  // generated migrations as ENABLE RLS + CREATE POLICY statements.
-  entities: {
-    roles: {
-      provider: 'supabase',
-    },
-  },
 });

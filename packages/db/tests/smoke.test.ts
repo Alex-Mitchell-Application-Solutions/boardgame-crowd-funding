@@ -1,11 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { authUsers, creatorProfiles, processedStripeEvents } from '../src/schema';
+import { creatorProfiles, processedStripeEvents } from '../src/schema';
 
 describe('schema smoke', () => {
-  it('exposes the auth.users reference table from drizzle-orm/supabase', () => {
-    expect(authUsers).toBeDefined();
-  });
-
   it('exposes creator_profiles', () => {
     expect(creatorProfiles).toBeDefined();
   });
