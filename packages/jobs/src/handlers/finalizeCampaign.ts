@@ -1,5 +1,12 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { campaigns, pledges, pricingConfig, type CampaignStatus } from '@bgcf/db';
+import {
+  campaigns,
+  notifications,
+  pledges,
+  pricingConfig,
+  type CampaignStatus,
+  type NewNotification,
+} from '@bgcf/db';
 import { getDb } from '../db';
 import { resolvePlatformFeePct } from '../lib/fees';
 import { QUEUES, type ChargePledgePayload, type FinalizeCampaignPayload } from '../queues';
@@ -42,6 +49,9 @@ export async function handleFinalizeCampaign(
         totalPledgedPence: campaigns.totalPledgedPence,
         feeOverridePct: campaigns.feeOverridePct,
         deadlineAt: campaigns.deadlineAt,
+        creatorId: campaigns.creatorId,
+        title: campaigns.title,
+        slug: campaigns.slug,
       })
       .from(campaigns)
       .where(eq(campaigns.id, payload.campaignId))
@@ -56,6 +66,11 @@ export async function handleFinalizeCampaign(
 
     const goalHit = campaign.totalPledgedPence >= campaign.goalPence;
     const newStatus: CampaignStatus = goalHit ? 'succeeded' : 'failed';
+    const campaignPayload = {
+      campaignId: campaign.id,
+      campaignTitle: campaign.title,
+      campaignSlug: campaign.slug,
+    };
 
     if (goalHit) {
       // Snapshot fee pricing once and pass it to every charge_pledge job.
@@ -73,7 +88,7 @@ export async function handleFinalizeCampaign(
       };
 
       const pendingPledges = await tx
-        .select({ id: pledges.id })
+        .select({ id: pledges.id, backerId: pledges.backerId })
         .from(pledges)
         .where(and(eq(pledges.campaignId, campaign.id), eq(pledges.status, 'pending')));
 
@@ -87,6 +102,21 @@ export async function handleFinalizeCampaign(
           updatedAt: sql`now()`,
         })
         .where(eq(campaigns.id, campaign.id));
+
+      // Notify the creator + every backer that the campaign succeeded.
+      // The per-pledge `pledge_charged` notification still arrives later
+      // when each off-session charge resolves; this is the campaign-level
+      // confirmation.
+      const recipients = new Set<string>([campaign.creatorId]);
+      for (const p of pendingPledges) recipients.add(p.backerId);
+      const notificationRows: NewNotification[] = Array.from(recipients).map((userId) => ({
+        userId,
+        kind: 'campaign_succeeded',
+        payload: campaignPayload,
+      }));
+      if (notificationRows.length > 0) {
+        await tx.insert(notifications).values(notificationRows);
+      }
 
       // Enqueue all the per-pledge jobs. pg-boss inserts run inside the
       // outer transaction (it talks to the same Postgres) — if any fail,
@@ -112,7 +142,7 @@ export async function handleFinalizeCampaign(
         updatedAt: sql`now()`,
       })
       .where(and(eq(pledges.campaignId, campaign.id), eq(pledges.status, 'pending')))
-      .returning({ id: pledges.id });
+      .returning({ id: pledges.id, backerId: pledges.backerId });
 
     await tx
       .update(campaigns)
@@ -122,6 +152,18 @@ export async function handleFinalizeCampaign(
         updatedAt: sql`now()`,
       })
       .where(eq(campaigns.id, campaign.id));
+
+    // Notify the creator + every backer whose pledge we cancelled.
+    const failureRecipients = new Set<string>([campaign.creatorId]);
+    for (const p of cancelled) failureRecipients.add(p.backerId);
+    const failureRows: NewNotification[] = Array.from(failureRecipients).map((userId) => ({
+      userId,
+      kind: 'campaign_failed',
+      payload: campaignPayload,
+    }));
+    if (failureRows.length > 0) {
+      await tx.insert(notifications).values(failureRows);
+    }
 
     return { outcome: 'failed' as const, pledgesAffected: cancelled.length };
   });

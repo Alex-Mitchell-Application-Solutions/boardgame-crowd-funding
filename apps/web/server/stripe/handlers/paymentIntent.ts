@@ -1,8 +1,9 @@
 import 'server-only';
 import { eq, sql } from 'drizzle-orm';
 import type Stripe from 'stripe';
-import { pledgeTransactions, pledges } from '@bgcf/db';
+import { campaigns, notifications, pledgeTransactions, pledges } from '@bgcf/db';
 import { getDb } from '../../db';
+import { buildNotification } from '../../notifications/lib/factories';
 import { getStripe } from '../client';
 
 /**
@@ -67,7 +68,15 @@ export async function handlePaymentIntentSucceeded(event: Stripe.Event): Promise
         updatedAt: sql`now()`,
       })
       .where(eq(pledges.stripePaymentIntentId, pi.id))
-      .returning({ id: pledges.id });
+      .returning({
+        id: pledges.id,
+        backerId: pledges.backerId,
+        campaignId: pledges.campaignId,
+      });
+
+    let pledgeId: string;
+    let backerId: string;
+    let campaignId: string;
 
     const pledge = updated[0];
     if (!pledge) {
@@ -86,25 +95,23 @@ export async function handlePaymentIntentSucceeded(event: Stripe.Event): Promise
           updatedAt: sql`now()`,
         })
         .where(eq(pledges.id, pledgeIdFromMetadata))
-        .returning({ id: pledges.id });
+        .returning({
+          id: pledges.id,
+          backerId: pledges.backerId,
+          campaignId: pledges.campaignId,
+        });
       if (!updatedById[0]) throw new Error(`pledge_not_found_for_pi:${pi.id}`);
-
-      await tx.insert(pledgeTransactions).values({
-        pledgeId: updatedById[0].id,
-        kind: 'charge',
-        grossPence,
-        stripeFeePence,
-        platformFeePence,
-        netToCreatorPence,
-        appliedFeePct: String(appliedFeePct),
-        stripeChargeId: charge.id,
-        stripePaymentIntentId: pi.id,
-      });
-      return;
+      pledgeId = updatedById[0].id;
+      backerId = updatedById[0].backerId;
+      campaignId = updatedById[0].campaignId;
+    } else {
+      pledgeId = pledge.id;
+      backerId = pledge.backerId;
+      campaignId = pledge.campaignId;
     }
 
     await tx.insert(pledgeTransactions).values({
-      pledgeId: pledge.id,
+      pledgeId,
       kind: 'charge',
       grossPence,
       stripeFeePence,
@@ -114,22 +121,75 @@ export async function handlePaymentIntentSucceeded(event: Stripe.Event): Promise
       stripeChargeId: charge.id,
       stripePaymentIntentId: pi.id,
     });
+
+    // Notify the backer that they were charged.
+    const campaignRow = await tx
+      .select({ title: campaigns.title, slug: campaigns.slug })
+      .from(campaigns)
+      .where(eq(campaigns.id, campaignId))
+      .limit(1);
+    if (campaignRow[0]) {
+      await tx.insert(notifications).values(
+        buildNotification({
+          userId: backerId,
+          kind: 'pledge_charged',
+          payload: {
+            pledgeId,
+            campaignId,
+            campaignTitle: campaignRow[0].title,
+            campaignSlug: campaignRow[0].slug,
+            amountPence: grossPence,
+          },
+        }),
+      );
+    }
   });
 }
 
 /**
  * `payment_intent.payment_failed` — Stripe gave up on the off-session
- * charge (decline, expired card, etc.). Flip the pledge to `failed` so
- * the dashboard can surface the gap. The charge_pledge handler may have
- * already done this for `StripeCardError` failures; if so, this is a
- * no-op via the WHERE clause.
+ * charge (decline, expired card, etc.). Flip the pledge to `failed` and
+ * notify the backer so the dashboard surfaces the retry CTA. The
+ * charge_pledge handler may have already flipped the row for
+ * `StripeCardError` failures; the notification still lands once via
+ * the returning() guard.
  */
 export async function handlePaymentIntentFailed(event: Stripe.Event): Promise<void> {
   const pi = event.data.object as Stripe.PaymentIntent;
   const db = getDb();
 
-  await db
-    .update(pledges)
-    .set({ status: 'failed', stripePaymentIntentId: pi.id, updatedAt: sql`now()` })
-    .where(eq(pledges.stripePaymentIntentId, pi.id));
+  await db.transaction(async (tx) => {
+    const updated = await tx
+      .update(pledges)
+      .set({ status: 'failed', stripePaymentIntentId: pi.id, updatedAt: sql`now()` })
+      .where(eq(pledges.stripePaymentIntentId, pi.id))
+      .returning({
+        id: pledges.id,
+        backerId: pledges.backerId,
+        campaignId: pledges.campaignId,
+        priorStatus: pledges.status,
+      });
+    const pledge = updated[0];
+    if (!pledge) return;
+
+    const campaignRow = await tx
+      .select({ title: campaigns.title, slug: campaigns.slug })
+      .from(campaigns)
+      .where(eq(campaigns.id, pledge.campaignId))
+      .limit(1);
+    if (!campaignRow[0]) return;
+
+    await tx.insert(notifications).values(
+      buildNotification({
+        userId: pledge.backerId,
+        kind: 'pledge_charge_failed',
+        payload: {
+          pledgeId: pledge.id,
+          campaignId: pledge.campaignId,
+          campaignTitle: campaignRow[0].title,
+          campaignSlug: campaignRow[0].slug,
+        },
+      }),
+    );
+  });
 }
