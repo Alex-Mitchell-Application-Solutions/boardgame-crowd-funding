@@ -308,3 +308,52 @@ export async function cancelPledge(pledgeId: string): Promise<void> {
 
   revalidatePath('/account');
 }
+
+/**
+ * Refund a charged pledge — creator-initiated. Verifies the caller owns
+ * the parent campaign, then issues a Stripe refund with both
+ * `refund_application_fee: true` (Stripe returns our platform cut) and
+ * `reverse_transfer: true` (the creator's payout transfer is reversed).
+ *
+ * This action only INITIATES the refund. The actual pledge → 'refunded'
+ * flip + audit-row write happens in the `charge.refunded` webhook
+ * handler. That keeps the success path consistent whether the refund
+ * comes from this Server Action or from a manual refund in the Stripe
+ * dashboard.
+ */
+export async function refundPledge(pledgeId: string): Promise<void> {
+  const user = await requireUser();
+  const db = getDb();
+
+  // Owner-check via campaign join + pull the PI id.
+  const owned = await db
+    .select({
+      pledge: pledges,
+      creatorId: campaigns.creatorId,
+    })
+    .from(pledges)
+    .innerJoin(campaigns, eq(campaigns.id, pledges.campaignId))
+    .where(and(eq(pledges.id, pledgeId), eq(campaigns.creatorId, user.id)))
+    .limit(1);
+
+  const row = owned[0];
+  if (!row) throw new Error('pledge_not_found_or_not_owned');
+  if (row.pledge.status !== 'charged') {
+    throw new Error(`refund_blocked:pledge_status_${row.pledge.status}`);
+  }
+  if (!row.pledge.stripePaymentIntentId) {
+    throw new Error('refund_blocked:no_payment_intent');
+  }
+
+  const stripe = getStripe();
+  await stripe.refunds.create({
+    payment_intent: row.pledge.stripePaymentIntentId,
+    refund_application_fee: true,
+    reverse_transfer: true,
+    metadata: { pledge_id: row.pledge.id, refunded_by: user.id },
+  });
+
+  // The webhook will write pledge_transactions + flip status. Revalidate
+  // the dashboard so the creator sees the in-flight state.
+  revalidatePath(`/dashboard/campaigns/${row.pledge.campaignId}/backers`);
+}
