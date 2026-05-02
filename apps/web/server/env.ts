@@ -48,9 +48,25 @@ let cached: ServerEnv | undefined;
  */
 const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
 
+/**
+ * `.env.local` lines like `STRIPE_SECRET_KEY=` (no value after `=`) load
+ * into process.env as the empty string `""`, not as `undefined`. zod's
+ * `.optional()` only treats `undefined` as missing, so without this
+ * preprocess every empty placeholder fails .url() / .min(1) even though
+ * the field is declared optional. Coerce empty strings to undefined so
+ * "absent" and "explicitly blank" mean the same thing to the validator.
+ */
+function emptyToUndefined(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [key, value] of Object.entries(env)) {
+    out[key] = value === '' ? undefined : value;
+  }
+  return out;
+}
+
 export function getEnv(): ServerEnv {
   if (cached) return cached;
-  const parsed = ServerEnvSchema.safeParse(process.env);
+  const parsed = ServerEnvSchema.safeParse(emptyToUndefined(process.env));
   if (!parsed.success) {
     if (isBuildPhase) {
       // Return a permissive shape so module evaluation during `next build`
