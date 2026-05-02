@@ -1,8 +1,9 @@
 import 'server-only';
 import { eq, sql } from 'drizzle-orm';
 import type Stripe from 'stripe';
-import { pledgeTransactions, pledges } from '@bgcf/db';
+import { campaigns, notifications, pledgeTransactions, pledges } from '@bgcf/db';
 import { getDb } from '../../db';
+import { buildNotification } from '../../notifications/lib/factories';
 
 /**
  * `charge.refunded` — fired after a successful refund (creator-initiated
@@ -34,7 +35,11 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
       .update(pledges)
       .set({ status: 'refunded', updatedAt: sql`now()` })
       .where(eq(pledges.stripePaymentIntentId, piId))
-      .returning({ id: pledges.id });
+      .returning({
+        id: pledges.id,
+        backerId: pledges.backerId,
+        campaignId: pledges.campaignId,
+      });
 
     if (!pledge[0]) {
       console.warn(`[stripe.charge.refunded] no pledge for pi ${piId}`);
@@ -57,5 +62,27 @@ export async function handleChargeRefunded(event: Stripe.Event): Promise<void> {
       stripePaymentIntentId: piId,
       stripeRefundId: refundId,
     });
+
+    // Notify the backer.
+    const campaignRow = await tx
+      .select({ title: campaigns.title, slug: campaigns.slug })
+      .from(campaigns)
+      .where(eq(campaigns.id, pledge[0].campaignId))
+      .limit(1);
+    if (campaignRow[0]) {
+      await tx.insert(notifications).values(
+        buildNotification({
+          userId: pledge[0].backerId,
+          kind: 'pledge_refunded',
+          payload: {
+            pledgeId: pledge[0].id,
+            campaignId: pledge[0].campaignId,
+            campaignTitle: campaignRow[0].title,
+            campaignSlug: campaignRow[0].slug,
+            amountPence: refundAmount,
+          },
+        }),
+      );
+    }
   });
 }

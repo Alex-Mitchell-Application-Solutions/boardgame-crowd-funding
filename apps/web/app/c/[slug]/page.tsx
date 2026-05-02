@@ -3,9 +3,14 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { CampaignMedia, RewardTier } from '@bgcf/db';
 import { getPublicCampaignBySlug } from '@/server/campaigns/queries';
+import { getPublicUpdates } from '@/server/updates/queries';
+import { getCommentsForCampaign } from '@/server/comments/queries';
+import { getOptionalUser } from '@/server/auth';
 import { publicUrl } from '@/server/storage';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { CampaignProgressBar } from '@/components/campaigns/CampaignProgressBar';
+import { UpdatesSection } from '@/components/updates/UpdatesSection';
+import { CommentsSection } from '@/components/comments/CommentsSection';
 import { formatPence } from '@/lib/format';
 
 type PublicCampaign = NonNullable<Awaited<ReturnType<typeof getPublicCampaignBySlug>>>;
@@ -43,6 +48,12 @@ export default async function CampaignPage({ params }: Props) {
   const campaign = await getPublicCampaignBySlug(slug);
   if (!campaign) notFound();
 
+  const [updates, comments, viewer] = await Promise.all([
+    getPublicUpdates(campaign.id),
+    getCommentsForCampaign(campaign.id),
+    getOptionalUser(),
+  ]);
+
   const cover = campaign.media.find((m) => m.kind === 'cover');
   const gallery = campaign.media.filter((m) => m.kind !== 'cover');
   const visibleTiers = campaign.rewardTiers
@@ -72,6 +83,16 @@ export default async function CampaignPage({ params }: Props) {
               </ul>
             </section>
           ) : null}
+
+          <UpdatesSection updates={updates} />
+
+          <CommentsSection
+            campaignId={campaign.id}
+            comments={comments}
+            viewerId={viewer?.id ?? null}
+            viewerIsCreator={viewer?.id === campaign.creatorId}
+            acceptingComments={campaign.status === 'live' || campaign.status === 'succeeded'}
+          />
         </article>
 
         <aside className="space-y-6">

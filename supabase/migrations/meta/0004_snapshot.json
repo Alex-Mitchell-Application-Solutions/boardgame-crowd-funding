@@ -1,0 +1,2358 @@
+{
+  "id": "13eafdd5-4c51-43a7-bebd-70529584c5f4",
+  "prevId": "e90fb2c0-5f8c-43ca-807c-c5f4fefad995",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.backer_stripe_customers": {
+      "name": "backer_stripe_customers",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "stripe_customer_id": {
+          "name": "stripe_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "backer_stripe_customers_user_id_users_id_fk": {
+          "name": "backer_stripe_customers_user_id_users_id_fk",
+          "tableFrom": "backer_stripe_customers",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "backer_stripe_customers_stripe_customer_id_unique": {
+          "name": "backer_stripe_customers_stripe_customer_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "stripe_customer_id"
+          ]
+        }
+      },
+      "policies": {
+        "Owner can read their own backer-stripe-customer mapping": {
+          "name": "Owner can read their own backer-stripe-customer mapping",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"backer_stripe_customers\".\"user_id\""
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.campaign_media": {
+      "name": "campaign_media",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "r2_key": {
+          "name": "r2_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "media_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bytes": {
+          "name": "bytes",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "width": {
+          "name": "width",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "campaign_media_campaign_id_position_idx": {
+          "name": "campaign_media_campaign_id_position_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "campaign_media_one_cover_per_campaign_idx": {
+          "name": "campaign_media_one_cover_per_campaign_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"campaign_media\".\"kind\" = 'cover'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "campaign_media_campaign_id_campaigns_id_fk": {
+          "name": "campaign_media_campaign_id_campaigns_id_fk",
+          "tableFrom": "campaign_media",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "campaign_media_r2_key_unique": {
+          "name": "campaign_media_r2_key_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "r2_key"
+          ]
+        }
+      },
+      "policies": {
+        "Public can read media of live or succeeded campaigns": {
+          "name": "Public can read media of live or succeeded campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_media\".\"campaign_id\" AND c.status IN ('live', 'succeeded'))"
+        },
+        "Owner can read media of their own campaigns": {
+          "name": "Owner can read media of their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_media\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Owner can insert media on their own campaigns": {
+          "name": "Owner can insert media on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_media\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Owner can update media on their own campaigns": {
+          "name": "Owner can update media on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_media\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Owner can delete media on their own campaigns": {
+          "name": "Owner can delete media on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_media\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.campaign_updates": {
+      "name": "campaign_updates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_md": {
+          "name": "body_md",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_backers_only": {
+          "name": "is_backers_only",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "campaign_updates_campaign_id_published_idx": {
+          "name": "campaign_updates_campaign_id_published_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "published_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "campaign_updates_campaign_id_campaigns_id_fk": {
+          "name": "campaign_updates_campaign_id_campaigns_id_fk",
+          "tableFrom": "campaign_updates",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "campaign_updates_author_id_users_id_fk": {
+          "name": "campaign_updates_author_id_users_id_fk",
+          "tableFrom": "campaign_updates",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Public can read non-backers-only published updates": {
+          "name": "Public can read non-backers-only published updates",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "\"campaign_updates\".\"published_at\" IS NOT NULL AND \"campaign_updates\".\"is_backers_only\" = false AND EXISTS (\n      SELECT 1 FROM campaigns c WHERE c.id = \"campaign_updates\".\"campaign_id\" AND c.status IN ('live', 'succeeded')\n    )"
+        },
+        "Backers can read backers-only updates on their campaigns": {
+          "name": "Backers can read backers-only updates on their campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\"campaign_updates\".\"published_at\" IS NOT NULL AND EXISTS (\n      SELECT 1 FROM pledges p\n      WHERE p.campaign_id = \"campaign_updates\".\"campaign_id\"\n        AND p.backer_id = (SELECT auth.uid())\n        AND p.status IN ('pending', 'charged')\n    )"
+        },
+        "Creator can read all updates on their own campaigns": {
+          "name": "Creator can read all updates on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_updates\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Creator can insert updates on their own campaigns": {
+          "name": "Creator can insert updates on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_updates\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Creator can update updates on their own campaigns": {
+          "name": "Creator can update updates on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_updates\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Creator can delete updates on their own campaigns": {
+          "name": "Creator can delete updates on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"campaign_updates\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.campaigns": {
+      "name": "campaigns",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "creator_id": {
+          "name": "creator_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "tagline": {
+          "name": "tagline",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "story_md": {
+          "name": "story_md",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "campaign_category",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "goal_pence": {
+          "name": "goal_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'gbp'"
+        },
+        "status": {
+          "name": "status",
+          "type": "campaign_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'draft'"
+        },
+        "launched_at": {
+          "name": "launched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deadline_at": {
+          "name": "deadline_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "finalized_at": {
+          "name": "finalized_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fee_override_pct": {
+          "name": "fee_override_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_pledged_pence": {
+          "name": "total_pledged_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "pledge_count": {
+          "name": "pledge_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "campaigns_status_deadline_idx": {
+          "name": "campaigns_status_deadline_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "deadline_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "campaigns_category_status_idx": {
+          "name": "campaigns_category_status_idx",
+          "columns": [
+            {
+              "expression": "category",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "campaigns_creator_id_idx": {
+          "name": "campaigns_creator_id_idx",
+          "columns": [
+            {
+              "expression": "creator_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "campaigns_title_trgm_idx": {
+          "name": "campaigns_title_trgm_idx",
+          "columns": [
+            {
+              "expression": "\"title\" gin_trgm_ops",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "campaigns_creator_id_creator_profiles_user_id_fk": {
+          "name": "campaigns_creator_id_creator_profiles_user_id_fk",
+          "tableFrom": "campaigns",
+          "tableTo": "creator_profiles",
+          "columnsFrom": [
+            "creator_id"
+          ],
+          "columnsTo": [
+            "user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "campaigns_slug_unique": {
+          "name": "campaigns_slug_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "slug"
+          ]
+        }
+      },
+      "policies": {
+        "Public can read live or succeeded campaigns": {
+          "name": "Public can read live or succeeded campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "\"campaigns\".\"status\" IN ('live', 'succeeded')"
+        },
+        "Owner can read their own campaigns at any status": {
+          "name": "Owner can read their own campaigns at any status",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"campaigns\".\"creator_id\""
+        },
+        "Owner can insert their own campaigns": {
+          "name": "Owner can insert their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "(SELECT auth.uid()) = \"campaigns\".\"creator_id\""
+        },
+        "Owner can update their own campaigns": {
+          "name": "Owner can update their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"campaigns\".\"creator_id\"",
+          "withCheck": "(SELECT auth.uid()) = \"campaigns\".\"creator_id\""
+        }
+      },
+      "checkConstraints": {
+        "campaigns_goal_pence_min": {
+          "name": "campaigns_goal_pence_min",
+          "value": "\"campaigns\".\"goal_pence\" >= 100"
+        },
+        "campaigns_currency_lower": {
+          "name": "campaigns_currency_lower",
+          "value": "\"campaigns\".\"currency\" = lower(\"campaigns\".\"currency\")"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.comments": {
+      "name": "comments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_hidden": {
+          "name": "is_hidden",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "comments_campaign_id_created_at_idx": {
+          "name": "comments_campaign_id_created_at_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "comments_parent_id_idx": {
+          "name": "comments_parent_id_idx",
+          "columns": [
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "comments_campaign_id_campaigns_id_fk": {
+          "name": "comments_campaign_id_campaigns_id_fk",
+          "tableFrom": "comments",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "comments_author_id_users_id_fk": {
+          "name": "comments_author_id_users_id_fk",
+          "tableFrom": "comments",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "author_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "comments_parent_id_fk": {
+          "name": "comments_parent_id_fk",
+          "tableFrom": "comments",
+          "tableTo": "comments",
+          "columnsFrom": [
+            "parent_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Public can read non-hidden comments on visible campaigns": {
+          "name": "Public can read non-hidden comments on visible campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "\"comments\".\"is_hidden\" = false AND EXISTS (\n      SELECT 1 FROM campaigns c WHERE c.id = \"comments\".\"campaign_id\" AND c.status IN ('live', 'succeeded')\n    )"
+        },
+        "Author can read their own comments": {
+          "name": "Author can read their own comments",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"comments\".\"author_id\""
+        },
+        "Creator can read all comments on their campaigns": {
+          "name": "Creator can read all comments on their campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"comments\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Authenticated users can post comments to live campaigns": {
+          "name": "Authenticated users can post comments to live campaigns",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "(SELECT auth.uid()) = \"comments\".\"author_id\" AND EXISTS (\n      SELECT 1 FROM campaigns c WHERE c.id = \"comments\".\"campaign_id\" AND c.status IN ('live', 'succeeded')\n    )"
+        },
+        "Author can delete their own comments": {
+          "name": "Author can delete their own comments",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"comments\".\"author_id\""
+        },
+        "Creator can update comments on their campaigns (for hiding)": {
+          "name": "Creator can update comments on their campaigns (for hiding)",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"comments\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        }
+      },
+      "checkConstraints": {
+        "comments_body_not_empty": {
+          "name": "comments_body_not_empty",
+          "value": "length(trim(\"comments\".\"body\")) > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.creator_profiles": {
+      "name": "creator_profiles",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bio": {
+          "name": "bio",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "avatar_r2_key": {
+          "name": "avatar_r2_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_account_id": {
+          "name": "stripe_account_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_charges_enabled": {
+          "name": "stripe_charges_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "stripe_payouts_enabled": {
+          "name": "stripe_payouts_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "stripe_details_submitted": {
+          "name": "stripe_details_submitted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "creator_profiles_stripe_account_id_idx": {
+          "name": "creator_profiles_stripe_account_id_idx",
+          "columns": [
+            {
+              "expression": "stripe_account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "creator_profiles_user_id_users_id_fk": {
+          "name": "creator_profiles_user_id_users_id_fk",
+          "tableFrom": "creator_profiles",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "creator_profiles_stripe_account_id_unique": {
+          "name": "creator_profiles_stripe_account_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "stripe_account_id"
+          ]
+        }
+      },
+      "policies": {
+        "Owner can read their own creator profile": {
+          "name": "Owner can read their own creator profile",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"creator_profiles\".\"user_id\""
+        },
+        "Owner can insert their own creator profile": {
+          "name": "Owner can insert their own creator profile",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "(SELECT auth.uid()) = \"creator_profiles\".\"user_id\""
+        },
+        "Owner can update their own creator profile": {
+          "name": "Owner can update their own creator profile",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"creator_profiles\".\"user_id\"",
+          "withCheck": "(SELECT auth.uid()) = \"creator_profiles\".\"user_id\""
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notification_preferences": {
+      "name": "notification_preferences",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "inapp_pledge_confirmed": {
+          "name": "inapp_pledge_confirmed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_pledge_charged": {
+          "name": "inapp_pledge_charged",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_pledge_charge_failed": {
+          "name": "inapp_pledge_charge_failed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_pledge_refunded": {
+          "name": "inapp_pledge_refunded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_campaign_succeeded": {
+          "name": "inapp_campaign_succeeded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_campaign_failed": {
+          "name": "inapp_campaign_failed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_campaign_update_posted": {
+          "name": "inapp_campaign_update_posted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_comment_reply": {
+          "name": "inapp_comment_reply",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "inapp_connect_onboarding_incomplete": {
+          "name": "inapp_connect_onboarding_incomplete",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_pledge_confirmed": {
+          "name": "email_pledge_confirmed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_pledge_charged": {
+          "name": "email_pledge_charged",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_pledge_charge_failed": {
+          "name": "email_pledge_charge_failed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_pledge_refunded": {
+          "name": "email_pledge_refunded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_campaign_succeeded": {
+          "name": "email_campaign_succeeded",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_campaign_failed": {
+          "name": "email_campaign_failed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_campaign_update_posted": {
+          "name": "email_campaign_update_posted",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_comment_reply": {
+          "name": "email_comment_reply",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "email_connect_onboarding_incomplete": {
+          "name": "email_connect_onboarding_incomplete",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "notification_preferences_user_id_users_id_fk": {
+          "name": "notification_preferences_user_id_users_id_fk",
+          "tableFrom": "notification_preferences",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Users can read their own preferences": {
+          "name": "Users can read their own preferences",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"notification_preferences\".\"user_id\""
+        },
+        "Users can insert their own preferences": {
+          "name": "Users can insert their own preferences",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "(SELECT auth.uid()) = \"notification_preferences\".\"user_id\""
+        },
+        "Users can update their own preferences": {
+          "name": "Users can update their own preferences",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"notification_preferences\".\"user_id\"",
+          "withCheck": "(SELECT auth.uid()) = \"notification_preferences\".\"user_id\""
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.notifications": {
+      "name": "notifications",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "notification_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "read_at": {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "notifications_user_created_idx": {
+          "name": "notifications_user_created_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "notifications_user_unread_idx": {
+          "name": "notifications_user_unread_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"notifications\".\"read_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "notifications_user_id_users_id_fk": {
+          "name": "notifications_user_id_users_id_fk",
+          "tableFrom": "notifications",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Users can read their own notifications": {
+          "name": "Users can read their own notifications",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"notifications\".\"user_id\""
+        },
+        "Users can update their own notifications (mark read)": {
+          "name": "Users can update their own notifications (mark read)",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"notifications\".\"user_id\"",
+          "withCheck": "(SELECT auth.uid()) = \"notifications\".\"user_id\""
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pledge_items": {
+      "name": "pledge_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "pledge_id": {
+          "name": "pledge_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reward_tier_id": {
+          "name": "reward_tier_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "unit_price_pence": {
+          "name": "unit_price_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pledge_items_pledge_id_idx": {
+          "name": "pledge_items_pledge_id_idx",
+          "columns": [
+            {
+              "expression": "pledge_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pledge_items_reward_tier_id_idx": {
+          "name": "pledge_items_reward_tier_id_idx",
+          "columns": [
+            {
+              "expression": "reward_tier_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pledge_items_pledge_id_pledges_id_fk": {
+          "name": "pledge_items_pledge_id_pledges_id_fk",
+          "tableFrom": "pledge_items",
+          "tableTo": "pledges",
+          "columnsFrom": [
+            "pledge_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pledge_items_reward_tier_id_reward_tiers_id_fk": {
+          "name": "pledge_items_reward_tier_id_reward_tiers_id_fk",
+          "tableFrom": "pledge_items",
+          "tableTo": "reward_tiers",
+          "columnsFrom": [
+            "reward_tier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Backer can read items on their own pledges": {
+          "name": "Backer can read items on their own pledges",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM pledges p WHERE p.id = \"pledge_items\".\"pledge_id\" AND p.backer_id = (SELECT auth.uid()))"
+        },
+        "Creator can read items on pledges to their campaigns": {
+          "name": "Creator can read items on pledges to their campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (\n      SELECT 1 FROM pledges p\n      JOIN campaigns c ON c.id = p.campaign_id\n      WHERE p.id = \"pledge_items\".\"pledge_id\" AND c.creator_id = (SELECT auth.uid())\n    )"
+        },
+        "Backer can insert items on their own pledges": {
+          "name": "Backer can insert items on their own pledges",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "EXISTS (SELECT 1 FROM pledges p WHERE p.id = \"pledge_items\".\"pledge_id\" AND p.backer_id = (SELECT auth.uid()))"
+        }
+      },
+      "checkConstraints": {
+        "pledge_items_quantity_min": {
+          "name": "pledge_items_quantity_min",
+          "value": "\"pledge_items\".\"quantity\" >= 1"
+        },
+        "pledge_items_unit_price_min": {
+          "name": "pledge_items_unit_price_min",
+          "value": "\"pledge_items\".\"unit_price_pence\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pledge_transactions": {
+      "name": "pledge_transactions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "pledge_id": {
+          "name": "pledge_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "pledge_transaction_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gross_pence": {
+          "name": "gross_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_fee_pence": {
+          "name": "stripe_fee_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform_fee_pence": {
+          "name": "platform_fee_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "net_to_creator_pence": {
+          "name": "net_to_creator_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "applied_fee_pct": {
+          "name": "applied_fee_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_charge_id": {
+          "name": "stripe_charge_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_payment_intent_id": {
+          "name": "stripe_payment_intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_refund_id": {
+          "name": "stripe_refund_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pledge_transactions_pledge_id_idx": {
+          "name": "pledge_transactions_pledge_id_idx",
+          "columns": [
+            {
+              "expression": "pledge_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pledge_transactions_payment_intent_idx": {
+          "name": "pledge_transactions_payment_intent_idx",
+          "columns": [
+            {
+              "expression": "stripe_payment_intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pledge_transactions_pledge_id_pledges_id_fk": {
+          "name": "pledge_transactions_pledge_id_pledges_id_fk",
+          "tableFrom": "pledge_transactions",
+          "tableTo": "pledges",
+          "columnsFrom": [
+            "pledge_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Backer can read transactions for their own pledges": {
+          "name": "Backer can read transactions for their own pledges",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM pledges p WHERE p.id = \"pledge_transactions\".\"pledge_id\" AND p.backer_id = (SELECT auth.uid()))"
+        },
+        "Creator can read transactions for pledges to their campaigns": {
+          "name": "Creator can read transactions for pledges to their campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (\n      SELECT 1 FROM pledges p\n      JOIN campaigns c ON c.id = p.campaign_id\n      WHERE p.id = \"pledge_transactions\".\"pledge_id\" AND c.creator_id = (SELECT auth.uid())\n    )"
+        }
+      },
+      "checkConstraints": {
+        "pledge_transactions_gross_non_negative": {
+          "name": "pledge_transactions_gross_non_negative",
+          "value": "\"pledge_transactions\".\"gross_pence\" >= 0"
+        },
+        "pledge_transactions_stripe_fee_non_negative": {
+          "name": "pledge_transactions_stripe_fee_non_negative",
+          "value": "\"pledge_transactions\".\"stripe_fee_pence\" >= 0"
+        },
+        "pledge_transactions_platform_fee_non_negative": {
+          "name": "pledge_transactions_platform_fee_non_negative",
+          "value": "\"pledge_transactions\".\"platform_fee_pence\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pledges": {
+      "name": "pledges",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "backer_id": {
+          "name": "backer_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount_pence": {
+          "name": "amount_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_customer_id": {
+          "name": "stripe_customer_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_payment_method_id": {
+          "name": "stripe_payment_method_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stripe_setup_intent_id": {
+          "name": "stripe_setup_intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_payment_intent_id": {
+          "name": "stripe_payment_intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "pledge_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "shipping_name": {
+          "name": "shipping_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shipping_line1": {
+          "name": "shipping_line1",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shipping_line2": {
+          "name": "shipping_line2",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shipping_city": {
+          "name": "shipping_city",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shipping_postal_code": {
+          "name": "shipping_postal_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shipping_country": {
+          "name": "shipping_country",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "charged_at": {
+          "name": "charged_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cancelled_at": {
+          "name": "cancelled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "pledges_campaign_id_status_idx": {
+          "name": "pledges_campaign_id_status_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pledges_backer_id_created_at_idx": {
+          "name": "pledges_backer_id_created_at_idx",
+          "columns": [
+            {
+              "expression": "backer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pledges_payment_intent_idx": {
+          "name": "pledges_payment_intent_idx",
+          "columns": [
+            {
+              "expression": "stripe_payment_intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pledges_one_active_per_backer_idx": {
+          "name": "pledges_one_active_per_backer_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "backer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"pledges\".\"status\" IN ('pending', 'charged')",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pledges_campaign_id_campaigns_id_fk": {
+          "name": "pledges_campaign_id_campaigns_id_fk",
+          "tableFrom": "pledges",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "pledges_backer_id_users_id_fk": {
+          "name": "pledges_backer_id_users_id_fk",
+          "tableFrom": "pledges",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "backer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "pledges_stripe_setup_intent_id_unique": {
+          "name": "pledges_stripe_setup_intent_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "stripe_setup_intent_id"
+          ]
+        },
+        "pledges_stripe_payment_intent_id_unique": {
+          "name": "pledges_stripe_payment_intent_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "stripe_payment_intent_id"
+          ]
+        }
+      },
+      "policies": {
+        "Backer can read their own pledges": {
+          "name": "Backer can read their own pledges",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"pledges\".\"backer_id\""
+        },
+        "Creator can read pledges to their own campaigns": {
+          "name": "Creator can read pledges to their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"pledges\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Backer can insert their own pledges": {
+          "name": "Backer can insert their own pledges",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "(SELECT auth.uid()) = \"pledges\".\"backer_id\""
+        },
+        "Backer can update their own pledges": {
+          "name": "Backer can update their own pledges",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = \"pledges\".\"backer_id\"",
+          "withCheck": "(SELECT auth.uid()) = \"pledges\".\"backer_id\""
+        }
+      },
+      "checkConstraints": {
+        "pledges_amount_pence_min": {
+          "name": "pledges_amount_pence_min",
+          "value": "\"pledges\".\"amount_pence\" >= 100"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pricing_config": {
+      "name": "pricing_config",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "platform_fee_pct": {
+          "name": "platform_fee_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_fee_pct": {
+          "name": "stripe_fee_pct",
+          "type": "numeric(5, 4)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "stripe_fee_fixed_pence": {
+          "name": "stripe_fee_fixed_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_by": {
+          "name": "updated_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "pricing_config_updated_by_users_id_fk": {
+          "name": "pricing_config_updated_by_users_id_fk",
+          "tableFrom": "pricing_config",
+          "tableTo": "users",
+          "schemaTo": "auth",
+          "columnsFrom": [
+            "updated_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Authenticated users can read pricing config": {
+          "name": "Authenticated users can read pricing config",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "true"
+        }
+      },
+      "checkConstraints": {
+        "pricing_config_singleton": {
+          "name": "pricing_config_singleton",
+          "value": "\"pricing_config\".\"id\" = 1"
+        },
+        "pricing_config_platform_fee_range": {
+          "name": "pricing_config_platform_fee_range",
+          "value": "\"pricing_config\".\"platform_fee_pct\" >= 0 AND \"pricing_config\".\"platform_fee_pct\" <= 0.5"
+        },
+        "pricing_config_stripe_fee_range": {
+          "name": "pricing_config_stripe_fee_range",
+          "value": "\"pricing_config\".\"stripe_fee_pct\" >= 0 AND \"pricing_config\".\"stripe_fee_pct\" <= 0.1"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.processed_stripe_events": {
+      "name": "processed_stripe_events",
+      "schema": "",
+      "columns": {
+        "event_id": {
+          "name": "event_id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "processed_at": {
+          "name": "processed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.reward_tiers": {
+      "name": "reward_tiers",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "campaign_id": {
+          "name": "campaign_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description_md": {
+          "name": "description_md",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "price_pence": {
+          "name": "price_pence",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity_limit": {
+          "name": "quantity_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantity_claimed": {
+          "name": "quantity_claimed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "estimated_delivery": {
+          "name": "estimated_delivery",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "position": {
+          "name": "position",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "is_hidden": {
+          "name": "is_hidden",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "reward_tiers_campaign_id_position_idx": {
+          "name": "reward_tiers_campaign_id_position_idx",
+          "columns": [
+            {
+              "expression": "campaign_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "position",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reward_tiers_campaign_id_campaigns_id_fk": {
+          "name": "reward_tiers_campaign_id_campaigns_id_fk",
+          "tableFrom": "reward_tiers",
+          "tableTo": "campaigns",
+          "columnsFrom": [
+            "campaign_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "Public can read reward tiers of live or succeeded campaigns": {
+          "name": "Public can read reward tiers of live or succeeded campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"reward_tiers\".\"campaign_id\" AND c.status IN ('live', 'succeeded'))"
+        },
+        "Owner can read reward tiers of their own campaigns": {
+          "name": "Owner can read reward tiers of their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"reward_tiers\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Owner can insert reward tiers on their own campaigns": {
+          "name": "Owner can insert reward tiers on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "authenticated"
+          ],
+          "withCheck": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"reward_tiers\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Owner can update reward tiers on their own campaigns": {
+          "name": "Owner can update reward tiers on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "UPDATE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"reward_tiers\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        },
+        "Owner can delete reward tiers on their own campaigns": {
+          "name": "Owner can delete reward tiers on their own campaigns",
+          "as": "PERMISSIVE",
+          "for": "DELETE",
+          "to": [
+            "authenticated"
+          ],
+          "using": "EXISTS (SELECT 1 FROM campaigns c WHERE c.id = \"reward_tiers\".\"campaign_id\" AND c.creator_id = (SELECT auth.uid()))"
+        }
+      },
+      "checkConstraints": {
+        "reward_tiers_price_pence_min": {
+          "name": "reward_tiers_price_pence_min",
+          "value": "\"reward_tiers\".\"price_pence\" >= 100"
+        },
+        "reward_tiers_quantity_claimed_within_limit": {
+          "name": "reward_tiers_quantity_claimed_within_limit",
+          "value": "\"reward_tiers\".\"quantity_limit\" IS NULL OR \"reward_tiers\".\"quantity_claimed\" <= \"reward_tiers\".\"quantity_limit\""
+        }
+      },
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.campaign_category": {
+      "name": "campaign_category",
+      "schema": "public",
+      "values": [
+        "strategy",
+        "family",
+        "party",
+        "rpg",
+        "wargame",
+        "card",
+        "other"
+      ]
+    },
+    "public.campaign_status": {
+      "name": "campaign_status",
+      "schema": "public",
+      "values": [
+        "draft",
+        "live",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "hidden"
+      ]
+    },
+    "public.media_kind": {
+      "name": "media_kind",
+      "schema": "public",
+      "values": [
+        "cover",
+        "gallery_image",
+        "gallery_video"
+      ]
+    },
+    "public.notification_kind": {
+      "name": "notification_kind",
+      "schema": "public",
+      "values": [
+        "pledge_confirmed",
+        "pledge_charged",
+        "pledge_charge_failed",
+        "pledge_refunded",
+        "campaign_succeeded",
+        "campaign_failed",
+        "campaign_update_posted",
+        "comment_reply",
+        "connect_onboarding_incomplete"
+      ]
+    },
+    "public.pledge_status": {
+      "name": "pledge_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "charged",
+        "failed",
+        "refunded",
+        "cancelled"
+      ]
+    },
+    "public.pledge_transaction_kind": {
+      "name": "pledge_transaction_kind",
+      "schema": "public",
+      "values": [
+        "charge",
+        "refund"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

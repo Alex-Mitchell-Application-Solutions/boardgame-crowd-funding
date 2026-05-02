@@ -15,6 +15,14 @@ type ColumnsForPledges = { backerId: PgColumn; campaignId: PgColumn };
 type ColumnsForPledgeItems = { pledgeId: PgColumn };
 type ColumnsForPledgeTransactions = { pledgeId: PgColumn };
 type ColumnsForPricingConfig = { id: PgColumn };
+type ColumnsForCampaignUpdates = {
+  campaignId: PgColumn;
+  isBackersOnly: PgColumn;
+  publishedAt: PgColumn;
+};
+type ColumnsForComments = { authorId: PgColumn; campaignId: PgColumn; isHidden: PgColumn };
+type ColumnsForNotifications = { userId: PgColumn };
+type ColumnsForNotificationPreferences = { userId: PgColumn };
 
 // `to:` arrays for policies that should apply to both anonymous and
 // authenticated roles (e.g. public read of live campaigns).
@@ -287,6 +295,141 @@ export const pledgeTransactionsPolicies = (t: ColumnsForPledgeTransactions) => [
       JOIN campaigns c ON c.id = p.campaign_id
       WHERE p.id = ${t.pledgeId} AND c.creator_id = (SELECT auth.uid())
     )`,
+  }),
+];
+
+// ---- campaign_updates ----------------------------------------------------
+//
+// Public can read updates that are *published* (published_at IS NOT NULL)
+// AND not backers-only — for backers-only updates, only confirmed pledgers
+// of the parent campaign can read. Creator can read all their own
+// (drafts + published) at any time.
+
+export const campaignUpdatesPolicies = (t: ColumnsForCampaignUpdates) => [
+  pgPolicy('Public can read non-backers-only published updates', {
+    for: 'select',
+    to: publicRoles,
+    using: sql`${t.publishedAt} IS NOT NULL AND ${t.isBackersOnly} = false AND EXISTS (
+      SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.status IN ('live', 'succeeded')
+    )`,
+  }),
+  pgPolicy('Backers can read backers-only updates on their campaigns', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`${t.publishedAt} IS NOT NULL AND EXISTS (
+      SELECT 1 FROM pledges p
+      WHERE p.campaign_id = ${t.campaignId}
+        AND p.backer_id = (SELECT auth.uid())
+        AND p.status IN ('pending', 'charged')
+    )`,
+  }),
+  pgPolicy('Creator can read all updates on their own campaigns', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Creator can insert updates on their own campaigns', {
+    for: 'insert',
+    to: authenticatedRole,
+    withCheck: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Creator can update updates on their own campaigns', {
+    for: 'update',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Creator can delete updates on their own campaigns', {
+    for: 'delete',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+];
+
+// ---- comments ------------------------------------------------------------
+//
+// Public can read non-hidden comments on publicly-visible campaigns.
+// Authenticated users can post to live campaigns. Authors can delete their
+// own comments; creators can hide comments on their own campaigns
+// (admin / moderator paths land in M8).
+
+export const commentsPolicies = (t: ColumnsForComments) => [
+  pgPolicy('Public can read non-hidden comments on visible campaigns', {
+    for: 'select',
+    to: publicRoles,
+    using: sql`${t.isHidden} = false AND EXISTS (
+      SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.status IN ('live', 'succeeded')
+    )`,
+  }),
+  pgPolicy('Author can read their own comments', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.authorId}`,
+  }),
+  pgPolicy('Creator can read all comments on their campaigns', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Authenticated users can post comments to live campaigns', {
+    for: 'insert',
+    to: authenticatedRole,
+    withCheck: sql`(SELECT auth.uid()) = ${t.authorId} AND EXISTS (
+      SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.status IN ('live', 'succeeded')
+    )`,
+  }),
+  pgPolicy('Author can delete their own comments', {
+    for: 'delete',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.authorId}`,
+  }),
+  pgPolicy('Creator can update comments on their campaigns (for hiding)', {
+    for: 'update',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+];
+
+// ---- notifications -------------------------------------------------------
+//
+// Strictly per-user. Reads scoped to your own notifications; updates
+// (mark-read) similarly. No insert policy — notifications are written by
+// server code (running as `postgres`, RLS-bypass) in response to events.
+
+export const notificationsPolicies = (t: ColumnsForNotifications) => [
+  pgPolicy('Users can read their own notifications', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.userId}`,
+  }),
+  pgPolicy('Users can update their own notifications (mark read)', {
+    for: 'update',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.userId}`,
+    withCheck: sql`(SELECT auth.uid()) = ${t.userId}`,
+  }),
+];
+
+// ---- notification_preferences --------------------------------------------
+//
+// Users read + update their own row. Insert allowed too because the row is
+// created lazily when the user first hits the prefs UI.
+
+export const notificationPreferencesPolicies = (t: ColumnsForNotificationPreferences) => [
+  pgPolicy('Users can read their own preferences', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.userId}`,
+  }),
+  pgPolicy('Users can insert their own preferences', {
+    for: 'insert',
+    to: authenticatedRole,
+    withCheck: sql`(SELECT auth.uid()) = ${t.userId}`,
+  }),
+  pgPolicy('Users can update their own preferences', {
+    for: 'update',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.userId}`,
+    withCheck: sql`(SELECT auth.uid()) = ${t.userId}`,
   }),
 ];
 

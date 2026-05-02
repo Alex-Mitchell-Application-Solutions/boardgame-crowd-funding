@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { campaignCategory } from '@bgcf/db';
+import { campaignCategory, type CampaignUpdate } from '@bgcf/db';
 import { requireUser } from '@/server/auth';
 import { getMyCampaign } from '@/server/campaigns/queries';
 import { getCreatorProfile } from '@/server/creators/queries';
+import { listCreatorUpdates } from '@/server/updates/queries';
 import {
   addRewardTier,
   publishCampaign,
@@ -11,13 +12,14 @@ import {
   removeRewardTier,
   updateCampaign,
 } from '@/server/campaigns/actions';
+import { deleteCampaignUpdate, postCampaignUpdate } from '@/server/updates/actions';
 import { MediaUploader } from '@/components/campaigns/MediaUploader';
 import { publicUrl } from '@/server/storage';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Edit campaign' };
 
-const STEPS = ['basics', 'story', 'tiers', 'media', 'review'] as const;
+const STEPS = ['basics', 'story', 'tiers', 'media', 'updates', 'review'] as const;
 type Step = (typeof STEPS)[number];
 
 export default async function EditCampaignPage({
@@ -35,6 +37,7 @@ export default async function EditCampaignPage({
   const campaign = await getMyCampaign(id, user.id);
   if (!campaign) notFound();
   const profile = await getCreatorProfile(user.id);
+  const updates = step === 'updates' ? await listCreatorUpdates(campaign.id) : [];
 
   const updateBound = updateCampaign.bind(null, campaign.id);
   const publishBound = publishCampaign.bind(null, campaign.id);
@@ -77,6 +80,8 @@ export default async function EditCampaignPage({
         <TiersStep campaign={campaign} />
       ) : step === 'media' ? (
         <MediaStep campaign={campaign} />
+      ) : step === 'updates' ? (
+        <UpdatesStep campaignId={campaign.id} updates={updates} />
       ) : (
         <ReviewStep
           campaign={campaign}
@@ -318,6 +323,79 @@ function MediaCard({
       </form>
     </div>
   );
+}
+
+function UpdatesStep({ campaignId, updates }: { campaignId: string; updates: CampaignUpdate[] }) {
+  const postBound = postCampaignUpdate.bind(null, campaignId);
+  return (
+    <div className="space-y-6">
+      <h2 className="text-lg font-medium">Updates</h2>
+      <p className="text-sm text-slate-600">
+        Posts here are visible on your public campaign page once published. Backers also get an
+        in-app notification — keep posts substantive.
+      </p>
+
+      {updates.length > 0 ? (
+        <ul className="divide-y divide-slate-200 rounded-md border border-slate-200">
+          {updates.map((u) => (
+            <li key={u.id} className="flex items-start justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900">{u.title}</p>
+                <p className="text-xs text-slate-500">
+                  {u.publishedAt ? `Published ${formatPublishedAt(u.publishedAt)}` : 'Draft'}
+                  {u.isBackersOnly ? ' · Backers only' : ''}
+                </p>
+              </div>
+              <form action={deleteCampaignUpdate.bind(null, u.id)}>
+                <button type="submit" className="text-xs font-medium text-red-700 hover:underline">
+                  Delete
+                </button>
+              </form>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="rounded-md border border-dashed border-slate-300 p-4 text-sm text-slate-600">
+          No updates posted yet.
+        </p>
+      )}
+
+      <details className="rounded-md border border-slate-200 p-4" open={updates.length === 0}>
+        <summary className="cursor-pointer text-sm font-medium">Post a new update</summary>
+        <form action={postBound} className="mt-4 space-y-3">
+          <Field label="Title" name="title" required maxLength={200} />
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">Body (markdown)</span>
+            <textarea
+              name="bodyMd"
+              required
+              rows={8}
+              maxLength={50_000}
+              className="mt-1 block w-full rounded-md border border-slate-300 px-3 py-2 text-sm shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="isBackersOnly" value="true" className="rounded" />
+            Backers only
+          </label>
+          <input type="hidden" name="publish" value="true" />
+          <button
+            type="submit"
+            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          >
+            Publish update
+          </button>
+        </form>
+      </details>
+    </div>
+  );
+}
+
+function formatPublishedAt(d: Date): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(d);
 }
 
 function ReviewStep({

@@ -1,8 +1,9 @@
 import 'server-only';
 import { eq, sql } from 'drizzle-orm';
 import type Stripe from 'stripe';
-import { campaigns, pledges } from '@bgcf/db';
+import { campaigns, notifications, pledges } from '@bgcf/db';
 import { getDb } from '../../db';
+import { buildNotification } from '../../notifications/lib/factories';
 
 /**
  * `setup_intent.succeeded` — Stripe has saved the backer's card. We persist
@@ -40,6 +41,7 @@ export async function handleSetupIntentSucceeded(event: Stripe.Event): Promise<v
       .where(eq(pledges.stripeSetupIntentId, setupIntent.id))
       .returning({
         id: pledges.id,
+        backerId: pledges.backerId,
         campaignId: pledges.campaignId,
         amountPence: pledges.amountPence,
       });
@@ -55,14 +57,35 @@ export async function handleSetupIntentSucceeded(event: Stripe.Event): Promise<v
       );
     }
 
-    await tx
+    const campaignRows = await tx
       .update(campaigns)
       .set({
         totalPledgedPence: sql`${campaigns.totalPledgedPence} + ${pledge.amountPence}`,
         pledgeCount: sql`${campaigns.pledgeCount} + 1`,
         updatedAt: sql`now()`,
       })
-      .where(eq(campaigns.id, pledge.campaignId));
+      .where(eq(campaigns.id, pledge.campaignId))
+      .returning({
+        title: campaigns.title,
+        slug: campaigns.slug,
+      });
+    const campaign = campaignRows[0];
+
+    if (campaign) {
+      await tx.insert(notifications).values(
+        buildNotification({
+          userId: pledge.backerId,
+          kind: 'pledge_confirmed',
+          payload: {
+            pledgeId: pledge.id,
+            campaignId: pledge.campaignId,
+            campaignTitle: campaign.title,
+            campaignSlug: campaign.slug,
+            amountPence: pledge.amountPence,
+          },
+        }),
+      );
+    }
   });
 }
 

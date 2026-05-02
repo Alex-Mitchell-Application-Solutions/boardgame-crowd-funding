@@ -4,8 +4,10 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
+  jsonb,
   numeric,
   pgEnum,
   pgTable,
@@ -18,8 +20,12 @@ import { authUsers } from 'drizzle-orm/supabase';
 import {
   backerStripeCustomersPolicies,
   campaignMediaPolicies,
+  campaignUpdatesPolicies,
   campaignsPolicies,
+  commentsPolicies,
   creatorProfilesPolicies,
+  notificationPreferencesPolicies,
+  notificationsPolicies,
   pledgeItemsPolicies,
   pledgeTransactionsPolicies,
   pledgesPolicies,
@@ -75,6 +81,22 @@ export type PledgeStatusValue = (typeof pledgeStatus.enumValues)[number];
 
 export const pledgeTransactionKind = pgEnum('pledge_transaction_kind', ['charge', 'refund']);
 export type PledgeTransactionKind = (typeof pledgeTransactionKind.enumValues)[number];
+
+// Notification kinds — extend this when a new notification trigger lands.
+// Each kind has a typed payload shape declared in
+// apps/web/server/notifications/lib/factories.ts.
+export const notificationKind = pgEnum('notification_kind', [
+  'pledge_confirmed',
+  'pledge_charged',
+  'pledge_charge_failed',
+  'pledge_refunded',
+  'campaign_succeeded',
+  'campaign_failed',
+  'campaign_update_posted',
+  'comment_reply',
+  'connect_onboarding_incomplete',
+]);
+export type NotificationKind = (typeof notificationKind.enumValues)[number];
 
 // ---- creator_profiles ----------------------------------------------------
 // Extends auth.users with platform-creator info. One row per user who has
@@ -447,6 +469,167 @@ export const pledgeTransactions = pgTable(
 
 export type PledgeTransaction = typeof pledgeTransactions.$inferSelect;
 export type NewPledgeTransaction = typeof pledgeTransactions.$inferInsert;
+
+// ---- campaign_updates ----------------------------------------------------
+// Markdown posts authored by the campaign creator on a campaign timeline.
+// is_backers_only gates visibility behind "has an active pledge". Posts
+// are drafts until published_at is set; once published, the
+// campaign_update_posted notification fans out to every active backer.
+export const campaignUpdates = pgTable(
+  'campaign_updates',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    campaignId: uuid('campaign_id')
+      .notNull()
+      .references(() => campaigns.id, { onDelete: 'cascade' }),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'restrict' }),
+    title: text('title').notNull(),
+    bodyMd: text('body_md').notNull(),
+    isBackersOnly: boolean('is_backers_only').notNull().default(false),
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    index('campaign_updates_campaign_id_published_idx').on(t.campaignId, t.publishedAt),
+    ...campaignUpdatesPolicies(t),
+  ],
+);
+
+export type CampaignUpdate = typeof campaignUpdates.$inferSelect;
+export type NewCampaignUpdate = typeof campaignUpdates.$inferInsert;
+
+// ---- comments ------------------------------------------------------------
+// Plain text (not markdown — comment threads stay simple in v1) on a
+// campaign. One level of threading via parent_id; deeper replies aren't
+// supported in v1. is_hidden lets creators / admins moderate without
+// deleting the row (so the conversation tree stays intact).
+export const comments = pgTable(
+  'comments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    campaignId: uuid('campaign_id')
+      .notNull()
+      .references(() => campaigns.id, { onDelete: 'cascade' }),
+    authorId: uuid('author_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'restrict' }),
+    parentId: uuid('parent_id'),
+    body: text('body').notNull(),
+    isHidden: boolean('is_hidden').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    // Self-FK for one-level threading. CASCADE so deleting a parent
+    // tears down its replies (matches the user expectation when a
+    // creator hides/removes their own initial comment).
+    foreignKey({
+      columns: [t.parentId],
+      foreignColumns: [t.id],
+      name: 'comments_parent_id_fk',
+    }).onDelete('cascade'),
+    index('comments_campaign_id_created_at_idx').on(t.campaignId, t.createdAt),
+    index('comments_parent_id_idx').on(t.parentId),
+    check('comments_body_not_empty', sql`length(trim(${t.body})) > 0`),
+    ...commentsPolicies(t),
+  ],
+);
+
+export type Comment = typeof comments.$inferSelect;
+export type NewComment = typeof comments.$inferInsert;
+
+// ---- notifications -------------------------------------------------------
+// One row per "thing the user should know about." Bell UI shows
+// `read_at IS NULL` count; /account/notifications shows the full feed.
+// Email delivery is gated by notification_preferences (per-user, per-kind);
+// the in-app row is always written.
+//
+// `payload` is per-kind structured data — campaign_id, pledge_id, etc.
+// Each NotificationKind has a typed payload shape declared in
+// apps/web/server/notifications/lib/factories.ts; the runtime shape is
+// `Record<string, unknown>` here so we don't lock the column to one
+// kind's fields.
+export const notifications = pgTable(
+  'notifications',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    kind: notificationKind('kind').notNull(),
+    payload: jsonb('payload').notNull().$type<Record<string, unknown>>(),
+    readAt: timestamp('read_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    // Bell + /account/notifications: WHERE user_id = ? ORDER BY created_at desc.
+    index('notifications_user_created_idx').on(t.userId, t.createdAt),
+    // Bell unread count: WHERE user_id = ? AND read_at IS NULL.
+    index('notifications_user_unread_idx')
+      .on(t.userId)
+      .where(sql`${t.readAt} IS NULL`),
+    ...notificationsPolicies(t),
+  ],
+);
+
+export type Notification = typeof notifications.$inferSelect;
+export type NewNotification = typeof notifications.$inferInsert;
+
+// ---- notification_preferences --------------------------------------------
+// One row per user with a boolean per (kind × channel). M7 only ships the
+// `inapp_*` flags + `email_*` flags; M8 actually wires the email send.
+// Defaults to `true` for transactional kinds (pledge_*, campaign_*) so
+// users opt OUT rather than opt in; comment_reply / update_posted default
+// true for in-app, true for email (creators expect engagement signal).
+export const notificationPreferences = pgTable(
+  'notification_preferences',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+
+    inappPledgeConfirmed: boolean('inapp_pledge_confirmed').notNull().default(true),
+    inappPledgeCharged: boolean('inapp_pledge_charged').notNull().default(true),
+    inappPledgeChargeFailed: boolean('inapp_pledge_charge_failed').notNull().default(true),
+    inappPledgeRefunded: boolean('inapp_pledge_refunded').notNull().default(true),
+    inappCampaignSucceeded: boolean('inapp_campaign_succeeded').notNull().default(true),
+    inappCampaignFailed: boolean('inapp_campaign_failed').notNull().default(true),
+    inappCampaignUpdatePosted: boolean('inapp_campaign_update_posted').notNull().default(true),
+    inappCommentReply: boolean('inapp_comment_reply').notNull().default(true),
+    inappConnectOnboardingIncomplete: boolean('inapp_connect_onboarding_incomplete')
+      .notNull()
+      .default(true),
+
+    emailPledgeConfirmed: boolean('email_pledge_confirmed').notNull().default(true),
+    emailPledgeCharged: boolean('email_pledge_charged').notNull().default(true),
+    emailPledgeChargeFailed: boolean('email_pledge_charge_failed').notNull().default(true),
+    emailPledgeRefunded: boolean('email_pledge_refunded').notNull().default(true),
+    emailCampaignSucceeded: boolean('email_campaign_succeeded').notNull().default(true),
+    emailCampaignFailed: boolean('email_campaign_failed').notNull().default(true),
+    emailCampaignUpdatePosted: boolean('email_campaign_update_posted').notNull().default(true),
+    emailCommentReply: boolean('email_comment_reply').notNull().default(true),
+    emailConnectOnboardingIncomplete: boolean('email_connect_onboarding_incomplete')
+      .notNull()
+      .default(true),
+
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [...notificationPreferencesPolicies(t)],
+);
+
+export type NotificationPreferences = typeof notificationPreferences.$inferSelect;
 
 // ---- processed_stripe_events ---------------------------------------------
 // Idempotency table for Stripe webhook events. Every webhook handler inserts
