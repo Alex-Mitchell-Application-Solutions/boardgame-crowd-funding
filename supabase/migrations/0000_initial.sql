@@ -1,24 +1,7 @@
--- The `auth` schema and `auth.users` table are owned by Supabase Auth in any
--- Supabase-backed environment. Drizzle still emits a CREATE statement because
--- we declare `auth.users` as a reference (via drizzle-orm/supabase). Wrapping
--- it in `IF NOT EXISTS` makes this migration safe to run against:
---   - local Supabase (`supabase start` — auth.users already exists)
---   - prod/staging Supabase (auth.users already exists)
---   - a bare Postgres for integration tests (auth.users doesn't exist yet,
---     so the stub gets created so FK constraints validate)
-CREATE SCHEMA IF NOT EXISTS "auth";
---> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "auth"."users" (
-	"id" uuid PRIMARY KEY NOT NULL,
-	"email" varchar(255),
-	"phone" text,
-	"email_confirmed_at" timestamp with time zone,
-	"phone_confirmed_at" timestamp with time zone,
-	"last_sign_in_at" timestamp with time zone,
-	"created_at" timestamp with time zone,
-	"updated_at" timestamp with time zone
-);
---> statement-breakpoint
+-- Supabase owns the `auth` schema and `auth.users` table. The FK reference
+-- below resolves against Supabase's existing table — we never create it.
+-- (drizzle-kit excludes `auth.users` from generation as long as schema.ts
+-- doesn't re-export `authUsers` from drizzle-orm/supabase.)
 CREATE TABLE "creator_profiles" (
 	"user_id" uuid PRIMARY KEY NOT NULL,
 	"display_name" text NOT NULL,

@@ -10,6 +10,9 @@ type ColumnsForCreatorProfiles = { userId: PgColumn };
 type ColumnsForCampaigns = { creatorId: PgColumn; status: PgColumn };
 type ColumnsForCampaignMedia = { campaignId: PgColumn };
 type ColumnsForRewardTiers = { campaignId: PgColumn };
+type ColumnsForBackerStripeCustomers = { userId: PgColumn };
+type ColumnsForPledges = { backerId: PgColumn; campaignId: PgColumn };
+type ColumnsForPledgeItems = { pledgeId: PgColumn };
 
 // `to:` arrays for policies that should apply to both anonymous and
 // authenticated roles (e.g. public read of live campaigns).
@@ -168,6 +171,80 @@ export const rewardTiersPolicies = (t: ColumnsForRewardTiers) => [
     for: 'delete',
     to: authenticatedRole,
     using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+];
+
+// ---- backer_stripe_customers --------------------------------------------
+//
+// Owner-only access. The mapping is sensitive (links a user to their
+// Stripe Customer id) and never read from the browser — server code
+// fetches it directly. Policies here are pure defence-in-depth.
+
+export const backerStripeCustomersPolicies = (t: ColumnsForBackerStripeCustomers) => [
+  pgPolicy('Owner can read their own backer-stripe-customer mapping', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.userId}`,
+  }),
+];
+
+// ---- pledges -------------------------------------------------------------
+//
+// A backer can read their own pledges (anywhere in the lifecycle so the
+// dashboard can show "your pledges") and a creator can read every pledge to
+// a campaign they own (for the backers list / payout report). Inserts and
+// updates are owner-only — no public write path.
+
+export const pledgesPolicies = (t: ColumnsForPledges) => [
+  pgPolicy('Backer can read their own pledges', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.backerId}`,
+  }),
+  pgPolicy('Creator can read pledges to their own campaigns', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM campaigns c WHERE c.id = ${t.campaignId} AND c.creator_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Backer can insert their own pledges', {
+    for: 'insert',
+    to: authenticatedRole,
+    withCheck: sql`(SELECT auth.uid()) = ${t.backerId}`,
+  }),
+  pgPolicy('Backer can update their own pledges', {
+    for: 'update',
+    to: authenticatedRole,
+    using: sql`(SELECT auth.uid()) = ${t.backerId}`,
+    withCheck: sql`(SELECT auth.uid()) = ${t.backerId}`,
+  }),
+];
+
+// ---- pledge_items --------------------------------------------------------
+//
+// Items inherit visibility from the parent pledge: backer sees their own,
+// creator sees items for pledges to their campaign. The double EXISTS join
+// (pledge → campaign) keeps the policy correct even if a future pledge
+// migrates to a different campaign (it shouldn't, but doesn't hurt).
+
+export const pledgeItemsPolicies = (t: ColumnsForPledgeItems) => [
+  pgPolicy('Backer can read items on their own pledges', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM pledges p WHERE p.id = ${t.pledgeId} AND p.backer_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Creator can read items on pledges to their campaigns', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (
+      SELECT 1 FROM pledges p
+      JOIN campaigns c ON c.id = p.campaign_id
+      WHERE p.id = ${t.pledgeId} AND c.creator_id = (SELECT auth.uid())
+    )`,
+  }),
+  pgPolicy('Backer can insert items on their own pledges', {
+    for: 'insert',
+    to: authenticatedRole,
+    withCheck: sql`EXISTS (SELECT 1 FROM pledges p WHERE p.id = ${t.pledgeId} AND p.backer_id = (SELECT auth.uid()))`,
   }),
 ];
 

@@ -4,6 +4,10 @@ import { getEnv } from '@/server/env';
 import { getStripe } from '@/server/stripe/client';
 import { processEvent } from '@/server/stripe/idempotency';
 import { handleAccountUpdated } from '@/server/stripe/handlers/accountUpdated';
+import {
+  handleSetupIntentFailed,
+  handleSetupIntentSucceeded,
+} from '@/server/stripe/handlers/setupIntent';
 
 export const runtime = 'nodejs';
 // Stripe sends webhooks as a stream, and signature verification needs the raw body.
@@ -49,6 +53,12 @@ export async function POST(request: Request): Promise<NextResponse> {
       switch (event.type) {
         case 'account.updated':
           await handleAccountUpdated(event);
+          break;
+        case 'setup_intent.succeeded':
+          await handleSetupIntentSucceeded(event);
+          break;
+        case 'setup_intent.setup_failed':
+          await handleSetupIntentFailed(event);
           break;
         default:
           // Unhandled event types are accepted (200) so Stripe doesn't
