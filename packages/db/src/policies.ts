@@ -13,6 +13,8 @@ type ColumnsForRewardTiers = { campaignId: PgColumn };
 type ColumnsForBackerStripeCustomers = { userId: PgColumn };
 type ColumnsForPledges = { backerId: PgColumn; campaignId: PgColumn };
 type ColumnsForPledgeItems = { pledgeId: PgColumn };
+type ColumnsForPledgeTransactions = { pledgeId: PgColumn };
+type ColumnsForPricingConfig = { id: PgColumn };
 
 // `to:` arrays for policies that should apply to both anonymous and
 // authenticated roles (e.g. public read of live campaigns).
@@ -245,6 +247,46 @@ export const pledgeItemsPolicies = (t: ColumnsForPledgeItems) => [
     for: 'insert',
     to: authenticatedRole,
     withCheck: sql`EXISTS (SELECT 1 FROM pledges p WHERE p.id = ${t.pledgeId} AND p.backer_id = (SELECT auth.uid()))`,
+  }),
+];
+
+// ---- pricing_config ------------------------------------------------------
+//
+// Read-only for authenticated users (so the public campaign page can
+// display "you'll keep ~95%" math without an extra round-trip). No
+// public read — anonymous browsers don't need it. Writes are server-only;
+// the row is seeded in the migration and updated by admins via direct DB
+// access for now (an admin UI lands in M8).
+
+export const pricingConfigPolicies = (_t: ColumnsForPricingConfig) => [
+  pgPolicy('Authenticated users can read pricing config', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`true`,
+  }),
+];
+
+// ---- pledge_transactions -------------------------------------------------
+//
+// Audit rows. Backer can read transactions for their own pledges; creator
+// can read transactions for pledges to their campaigns (powers the payout
+// report). No write policies — only the webhook handlers (running as
+// `postgres` and bypassing RLS) write here.
+
+export const pledgeTransactionsPolicies = (t: ColumnsForPledgeTransactions) => [
+  pgPolicy('Backer can read transactions for their own pledges', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (SELECT 1 FROM pledges p WHERE p.id = ${t.pledgeId} AND p.backer_id = (SELECT auth.uid()))`,
+  }),
+  pgPolicy('Creator can read transactions for pledges to their campaigns', {
+    for: 'select',
+    to: authenticatedRole,
+    using: sql`EXISTS (
+      SELECT 1 FROM pledges p
+      JOIN campaigns c ON c.id = p.campaign_id
+      WHERE p.id = ${t.pledgeId} AND c.creator_id = (SELECT auth.uid())
+    )`,
   }),
 ];
 

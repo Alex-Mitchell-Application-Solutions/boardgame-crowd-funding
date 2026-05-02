@@ -21,7 +21,9 @@ import {
   campaignsPolicies,
   creatorProfilesPolicies,
   pledgeItemsPolicies,
+  pledgeTransactionsPolicies,
   pledgesPolicies,
+  pricingConfigPolicies,
   processedStripeEventsPolicies,
   rewardTiersPolicies,
 } from './policies';
@@ -70,6 +72,9 @@ export const pledgeStatus = pgEnum('pledge_status', [
   'cancelled',
 ]);
 export type PledgeStatusValue = (typeof pledgeStatus.enumValues)[number];
+
+export const pledgeTransactionKind = pgEnum('pledge_transaction_kind', ['charge', 'refund']);
+export type PledgeTransactionKind = (typeof pledgeTransactionKind.enumValues)[number];
 
 // ---- creator_profiles ----------------------------------------------------
 // Extends auth.users with platform-creator info. One row per user who has
@@ -354,6 +359,94 @@ export const pledgeItems = pgTable(
 
 export type PledgeItem = typeof pledgeItems.$inferSelect;
 export type NewPledgeItem = typeof pledgeItems.$inferInsert;
+
+// ---- pricing_config ------------------------------------------------------
+// Single-row platform pricing config. We can change platform_fee_pct or
+// the Stripe pass-through estimate without a deploy by updating this row.
+// The `id = 1` CHECK enforces singleton-ness; the row is seeded by a
+// post-migration insert (handled in the migration's --> data block).
+//
+// The Stripe fee fields are an *estimate* used for forward-looking math
+// (e.g. "creator will net £X if charged today"). The actual fee paid to
+// Stripe is read from the BalanceTransaction at charge time and persisted
+// in pledge_transactions — that's the audit-truth value.
+export const pricingConfig = pgTable(
+  'pricing_config',
+  {
+    id: integer('id').primaryKey(),
+    platformFeePct: numeric('platform_fee_pct', { precision: 5, scale: 4 }).notNull(),
+    stripeFeePct: numeric('stripe_fee_pct', { precision: 5, scale: 4 }).notNull(),
+    stripeFeeFixedPence: bigint('stripe_fee_fixed_pence', { mode: 'number' }).notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+    updatedBy: uuid('updated_by').references(() => authUsers.id, { onDelete: 'set null' }),
+  },
+  (t) => [
+    check('pricing_config_singleton', sql`${t.id} = 1`),
+    check(
+      'pricing_config_platform_fee_range',
+      sql`${t.platformFeePct} >= 0 AND ${t.platformFeePct} <= 0.5`,
+    ),
+    check(
+      'pricing_config_stripe_fee_range',
+      sql`${t.stripeFeePct} >= 0 AND ${t.stripeFeePct} <= 0.1`,
+    ),
+    ...pricingConfigPolicies(t),
+  ],
+);
+
+export type PricingConfig = typeof pricingConfig.$inferSelect;
+
+// ---- pledge_transactions -------------------------------------------------
+// Append-only audit row written at every charge or refund. These are the
+// canonical record of what was charged / refunded — the campaign
+// total_pledged_pence and creator payout reports both reconcile against
+// this table rather than re-aggregating Stripe data live.
+//
+// Fees:
+//   - gross_pence       — what the backer was charged (or refunded).
+//   - stripe_fee_pence  — Stripe's actual fee, read from the
+//                          BalanceTransaction.fee at webhook time.
+//   - platform_fee_pence — our application_fee_amount (3% of gross by
+//                          default, overridable per campaign via
+//                          campaigns.fee_override_pct).
+//   - net_to_creator_pence — gross - stripe_fee - platform_fee.
+//   - applied_fee_pct    — the platform fee fraction we used at this
+//                          point in time (snapshot, so audit reads are
+//                          stable even if pricing_config changes later).
+export const pledgeTransactions = pgTable(
+  'pledge_transactions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    pledgeId: uuid('pledge_id')
+      .notNull()
+      .references(() => pledges.id, { onDelete: 'restrict' }),
+    kind: pledgeTransactionKind('kind').notNull(),
+    grossPence: bigint('gross_pence', { mode: 'number' }).notNull(),
+    stripeFeePence: bigint('stripe_fee_pence', { mode: 'number' }).notNull(),
+    platformFeePence: bigint('platform_fee_pence', { mode: 'number' }).notNull(),
+    netToCreatorPence: bigint('net_to_creator_pence', { mode: 'number' }).notNull(),
+    appliedFeePct: numeric('applied_fee_pct', { precision: 5, scale: 4 }).notNull(),
+    stripeChargeId: text('stripe_charge_id'),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    stripeRefundId: text('stripe_refund_id'),
+    occurredAt: timestamp('occurred_at', { withTimezone: true })
+      .notNull()
+      .default(sql`now()`),
+  },
+  (t) => [
+    index('pledge_transactions_pledge_id_idx').on(t.pledgeId),
+    index('pledge_transactions_payment_intent_idx').on(t.stripePaymentIntentId),
+    check('pledge_transactions_gross_non_negative', sql`${t.grossPence} >= 0`),
+    check('pledge_transactions_stripe_fee_non_negative', sql`${t.stripeFeePence} >= 0`),
+    check('pledge_transactions_platform_fee_non_negative', sql`${t.platformFeePence} >= 0`),
+    ...pledgeTransactionsPolicies(t),
+  ],
+);
+
+export type PledgeTransaction = typeof pledgeTransactions.$inferSelect;
+export type NewPledgeTransaction = typeof pledgeTransactions.$inferInsert;
 
 // ---- processed_stripe_events ---------------------------------------------
 // Idempotency table for Stripe webhook events. Every webhook handler inserts

@@ -20,7 +20,10 @@
   "dependencies": {
     "@bgcf/db": "workspace:*",
     "@bgcf/email": "workspace:*",
-    "pg-boss": "^10.1.6"
+    "drizzle-orm": "^0.44.3",
+    "pg-boss": "^10.1.6",
+    "postgres": "^3.4.5",
+    "stripe": "^17.4.0"
   },
   "devDependencies": {
     "@bgcf/config": "workspace:*",

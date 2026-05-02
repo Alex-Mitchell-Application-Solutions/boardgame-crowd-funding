@@ -4,6 +4,11 @@ import { getEnv } from '@/server/env';
 import { getStripe } from '@/server/stripe/client';
 import { processEvent } from '@/server/stripe/idempotency';
 import { handleAccountUpdated } from '@/server/stripe/handlers/accountUpdated';
+import { handleChargeRefunded } from '@/server/stripe/handlers/chargeRefunded';
+import {
+  handlePaymentIntentFailed,
+  handlePaymentIntentSucceeded,
+} from '@/server/stripe/handlers/paymentIntent';
 import {
   handleSetupIntentFailed,
   handleSetupIntentSucceeded,
@@ -59,6 +64,15 @@ export async function POST(request: Request): Promise<NextResponse> {
           break;
         case 'setup_intent.setup_failed':
           await handleSetupIntentFailed(event);
+          break;
+        case 'payment_intent.succeeded':
+          await handlePaymentIntentSucceeded(event);
+          break;
+        case 'payment_intent.payment_failed':
+          await handlePaymentIntentFailed(event);
+          break;
+        case 'charge.refunded':
+          await handleChargeRefunded(event);
           break;
         default:
           // Unhandled event types are accepted (200) so Stripe doesn't

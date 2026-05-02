@@ -59,6 +59,9 @@ importers:
       next:
         specifier: ^15.1.3
         version: 15.5.15(@playwright/test@1.59.1)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
+      pg-boss:
+        specifier: ^10.1.6
+        version: 10.4.2
       postgres:
         specifier: ^3.4.5
         version: 3.4.9
@@ -228,9 +231,18 @@ importers:
       '@bgcf/email':
         specifier: workspace:*
         version: link:../email
+      drizzle-orm:
+        specifier: ^0.44.3
+        version: 0.44.7(gel@2.2.0)(pg@8.20.0)(postgres@3.4.9)
       pg-boss:
         specifier: ^10.1.6
         version: 10.4.2
+      postgres:
+        specifier: ^3.4.5
+        version: 3.4.9
+      stripe:
+        specifier: ^17.4.0
+        version: 17.7.0
     devDependencies:
       '@bgcf/config':
         specifier: workspace:*
